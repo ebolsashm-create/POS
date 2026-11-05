@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wink POS Lite - Punto de Venta</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    [x-cloak] { display: none !important; }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 antialiased font-sans" x-data="posApp()" x-init="initApp()">
+
+  <!-- NOTIFICACIÓN TOAST -->
+  <div x-show="toast.show" x-transition class="fixed top-5 right-5 z-50 bg-slate-900 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3 text-xs border border-slate-700" x-cloak>
+    <div :class="toast.tipo === 'success' ? 'bg-emerald-500' : 'bg-amber-500'" class="w-2.5 h-2.5 rounded-full animate-ping"></div>
+    <div>
+      <p class="font-bold" x-text="toast.titulo"></p>
+      <p class="text-slate-400" x-text="toast.mensaje"></p>
+    </div>
+  </div>
+
+  <!-- MODAL DE LOGIN POR PIN -->
+  <div x-show="!usuario.autenticado" class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4" x-cloak>
+    <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm text-center">
+      <div class="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">
+        <i class="fa-solid fa-store"></i>
+      </div>
+      <h2 class="text-xl font-bold mb-1 text-slate-800">Wink POS Lite</h2>
+      <p class="text-xs text-slate-500 mb-6">Ingresa tu PIN de operador (Cajero: 1234 | Admin: 1010)</p>
+      <input type="password" maxlength="6" x-model="loginPin" @keyup.enter="iniciarSesion()" class="w-full text-center text-2xl tracking-widest py-3 border-2 border-slate-200 rounded-lg focus:outline-none focus:border-emerald-500 mb-4" placeholder="••••">
+      <button @click="iniciarSesion()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3 rounded-lg transition text-xs">Acceder al Sistema</button>
+      <p x-text="loginError" class="text-xs text-red-500 mt-3"></p>
+    </div>
+  </div>
+
+  <!-- HEADER -->
+  <header class="bg-slate-900 text-white sticky top-0 z-30 shadow-md">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-4">
+        <span class="font-bold text-lg tracking-tight text-emerald-400">Wink<span class="text-white">POS</span></span>
+        <div class="flex bg-slate-800 p-1 rounded-lg text-xs">
+          <button @click="vistaActiva = 'pos'" :class="vistaActiva === 'pos' ? 'bg-emerald-600 text-white' : 'text-slate-400'" class="px-3 py-1 rounded transition font-medium">POS / Catálogo</button>
+          <button @click="vistaActiva = 'pedidos'" :class="vistaActiva === 'pedidos' ? 'bg-emerald-600 text-white' : 'text-slate-400'" class="px-3 py-1 rounded transition font-medium">Órdenes y Despachos</button>
+        </div>
+      </div>
+      <div class="flex items-center gap-3 text-xs">
+        <span class="bg-slate-800 px-3 py-1 rounded border border-slate-700" x-text="'Tasa: ' + config.TASA_CAMBIO + ' Bs/$'"></span>
+        <span class="text-emerald-400 font-semibold" x-text="usuario.nombre + ' (' + usuario.rol + ')'"></span>
+        <button @click="cerrarSesion()" class="text-slate-400 hover:text-white" title="Cerrar Sesión"><i class="fa-solid fa-right-from-bracket"></i></button>
+      </div>
+    </div>
+  </header>
+
+  <!-- CONTENIDO PRINCIPAL -->
+  <main class="max-w-7xl mx-auto p-4">
+
+    <!-- VISTA 1: POS / CATÁLOGO -->
+    <div x-show="vistaActiva === 'pos'" class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      
+      <!-- SECCIÓN CATÁLOGO -->
+      <section class="lg:col-span-7 space-y-4">
+        <div class="relative">
+          <i class="fa-solid fa-magnifying-glass absolute left-3 top-3.5 text-slate-400 text-xs"></i>
+          <input type="text" x-model="searchQuery" placeholder="Buscar por nombre o código..." class="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-lg text-xs focus:outline-none focus:border-emerald-500 shadow-sm">
+        </div>
+
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-3 max-h-[calc(100vh-190px)] overflow-y-auto">
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <template x-for="prod in productosFiltrados" :key="prod.id">
+              <div class="bg-slate-50 rounded-lg border border-slate-200 shadow-sm overflow-hidden flex flex-col justify-between hover:border-emerald-500 transition">
+                <div class="relative w-full h-24 bg-slate-100 overflow-hidden">
+                  <img :src="prod.imagen_url" class="w-full h-full object-cover">
+                </div>
+                <div class="p-2.5 flex-1 flex flex-col justify-between">
+                  <div>
+                    <h4 class="font-semibold text-xs text-slate-800 line-clamp-1" x-text="prod.nombre"></h4>
+                    <p class="text-[10px] text-emerald-600 font-bold" x-text="'$' + prod.precio_usd.toFixed(2) + ' (Bs ' + (prod.precio_usd * config.TASA_CAMBIO).toFixed(2) + ')'"></p>
+                    <p class="text-[9px] text-slate-400" x-text="'Stock: ' + prod.stock"></p>
+                    <!-- RESTRICCIÓN DE MÁRGENES: Oculto para Cajeros -->
+                    <template x-if="usuario.rol === 'ADMINISTRADOR' || usuario.rol === 'ENCARGADO'">
+                      <p class="text-[9px] text-amber-600 font-semibold" x-text="'Costo: $' + prod.costo_usd.toFixed(2)"></p>
+                    </template>
+                  </div>
+                  <button @click="agregarAlCarrito(prod)" class="mt-2 w-full bg-emerald-600 hover:bg-emerald-700 text-white py-1.5 rounded text-[10px] font-semibold transition">Añadir</button>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECCIÓN CARRITO BISONETARIO -->
+      <section class="lg:col-span-5 bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col h-[calc(100vh-140px)] sticky top-20">
+        <h3 class="font-bold text-slate-800 text-xs mb-3 flex items-center justify-between">
+          <span><i class="fa-solid fa-cart-shopping text-emerald-600 mr-1"></i> Orden Actual</span>
+          <button @click="vaciarCarrito()" class="text-[10px] text-red-500 hover:underline">Vaciar</button>
+        </h3>
+        
+        <div class="flex-1 overflow-y-auto space-y-2 pr-1 border-y border-slate-100 py-2">
+          <template x-for="(item, idx) in carrito" :key="idx">
+            <div class="flex items-center justify-between bg-slate-50 p-2 rounded text-xs border border-slate-100">
+              <div class="flex-1 pr-2">
+                <p class="font-semibold text-slate-700" x-text="item.nombre"></p>
+                <p class="text-[10px] text-slate-400" x-text="'$' + item.precio_usd.toFixed(2) + ' c/u'"></p>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <button @click="cambiarCantidad(idx, -1)" class="w-5 h-5 bg-slate-200 rounded font-bold">-</button>
+                <span class="font-bold w-4 text-center" x-text="item.cantidad"></span>
+                <button @click="cambiarCantidad(idx, 1)" class="w-5 h-5 bg-slate-200 rounded font-bold">+</button>
+                <span class="font-bold text-slate-800 w-16 text-right" x-text="'$' + (item.precio_usd * item.cantidad).toFixed(2)"></span>
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <div class="pt-3 space-y-2 text-xs">
+          <div class="flex justify-between font-bold text-sm text-slate-800 border-t pt-2">
+            <span>Total USD:</span><span class="text-emerald-600" x-text="'$' + totalCarritoUSD.toFixed(2)"></span>
+          </div>
+          <div class="flex justify-between text-slate-500">
+            <span>Total Bs (Tasa: <span x-text="config.TASA_CAMBIO"></span>):</span>
+            <span class="font-bold text-slate-800" x-text="'Bs ' + totalCarritoBS.toFixed(2)"></span>
+          </div>
+          <div class="grid grid-cols-2 gap-2 pt-2">
+            <button @click="modalCobro = true" :disabled="carrito.length === 0" class="bg-emerald-600 disabled:bg-slate-300 text-white font-semibold py-2.5 rounded-lg text-xs transition">Cobrar POS</button>
+            <button @click="enviarVentaWhatsApp()" :disabled="carrito.length === 0" class="bg-green-500 disabled:bg-slate-300 text-white font-semibold py-2.5 rounded-lg text-xs transition flex items-center justify-center gap-1">
+              <i class="fa-brands fa-whatsapp"></i> WhatsApp
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- VISTA 2: ÓRDENES Y DESPACHOS -->
+    <div x-show="vistaActiva === 'pedidos'" class="space-y-4 max-w-4xl mx-auto" x-cloak>
+      <div class="flex justify-between items-center bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+        <div>
+          <h3 class="font-bold text-sm text-slate-800">Control de Órdenes y Despachos</h3>
+          <p class="text-[10px] text-slate-400">Sincronización en tiempo real con Google Sheets</p>
+        </div>
+        <button @click="cargarPedidos()" class="bg-slate-100 text-slate-700 px-3 py-1.5 rounded-lg text-xs font-semibold"><i class="fa-solid fa-rotate mr-1"></i> Actualizar</button>
+      </div>
+
+      <div class="space-y-3">
+        <template x-for="orden in listaOrdenes" :key="orden.id">
+          <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4">
+            <div class="space-y-1 w-full">
+              <div class="flex items-center gap-2">
+                <span class="font-bold text-xs text-slate-800" x-text="orden.id"></span>
+                <span :class="orden.estado === 'PENDIENTE' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'" class="text-[9px] font-bold px-2 py-0.5 rounded-full uppercase" x-text="orden.estado"></span>
+              </div>
+              <p class="text-xs text-slate-500" x-text="'Operador: ' + orden.usuario + ' | Método: ' + orden.metodo"></p>
+              <p class="text-xs font-bold text-emerald-600" x-text="'Total: $' + orden.total_usd.toFixed(2) + ' (Bs ' + orden.total_bs.toFixed(2) + ')'"></p>
+            </div>
+            <div class="w-full sm:w-auto">
+              <template x-if="orden.estado === 'PENDIENTE'">
+                <button @click="cambiarEstadoPedido(orden.id, 'DESPACHADO')" class="w-full sm:w-auto bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-xs font-semibold">Marcar Despachado</button>
+              </template>
+              <template x-if="orden.estado === 'DESPACHADO'">
+                <span class="text-xs text-emerald-600 font-semibold"><i class="fa-solid fa-circle-check"></i> Despachado</span>
+              </template>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </main>
+
+  <!-- MODAL DE COBRO BIMONETARIO Y CÁLCULO DE VUELTO -->
+  <div x-show="modalCobro" class="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" x-cloak>
+    <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md space-y-4">
+      <h3 class="font-bold text-slate-800 text-base border-b pb-2">Procesar Cobro Bimonetario</h3>
+      <div class="grid grid-cols-2 gap-2 text-xs">
+        <div>
+          <label class="block text-slate-500 mb-1">Método de Pago</label>
+          <select x-model="pago.metodo" class="w-full border border-slate-300 rounded p-2">
+            <option value="EFECTIVO_USD">Efectivo USD ($)</option>
+            <option value="PAGO_MOVIL">Pago Móvil (Bs)</option>
+            <option value="PUNTO_VES">Punto de Venta (Bs)</option>
+            <option value="CREDITO">Crédito / Fiado</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-slate-500 mb-1">Monto Recibido ($)</label>
+          <input type="number" step="0.01" x-model.number="pago.recibidoUSD" class="w-full border border-slate-300 rounded p-2" placeholder="0.00">
+        </div>
+      </div>
+      <div class="bg-slate-50 p-3 rounded-lg border text-xs space-y-1">
+        <div class="flex justify-between"><span>Vuelto Exacto USD:</span><span class="font-bold text-slate-800" x-text="'$' + vueltoUSD.toFixed(2)"></span></div>
+        <div class="flex justify-between"><span>Vuelto Exacto Bs:</span><span class="font-bold text-emerald-600" x-text="'Bs ' + vueltoBS.toFixed(2)"></span></div>
+      </div>
+      <div class="flex gap-2 pt-2">
+        <button @click="modalCobro = false" class="flex-1 bg-slate-200 text-slate-700 py-2 rounded-lg text-xs font-semibold">Cancelar</button>
+        <button @click="confirmarVentaBackend()" class="flex-1 bg-emerald-600 text-white py-2 rounded-lg text-xs font-semibold">Confirmar Venta</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCRIPT DE CONEXIÓN API -->
+  <script>
+    // ⚠️ CAMBIA ESTA URL POR TU ENLACE DE APPS SCRIPT QUE TERMINA EN /exec
+    const API_URL = "https://script.google.com/macros/s/AKfycbx_pP3HyIKPERiYV8Tb9TjkLGc7QOoLCBPOgCH31ZIfuusD4IG1qVbOnYjZSUI5X1F8/exec";
+
+    function posApp() {
+      return {
+        loginPin: '',
+        loginError: '',
+        usuario: { autenticado: false, nombre: '', rol: '' },
+        config: { TASA_CAMBIO: 36.50, WHATSAPP_ADMIN: '584120000000' },
+        productos: [],
+        carrito: [],
+        listaOrdenes: [],
+        searchQuery: '',
+        vistaActiva: 'pos',
+        modalCobro: false,
+        pago: { metodo: 'EFECTIVO_USD', recibidoUSD: 0 },
+        toast: { show: false, titulo: '', mensaje: '', tipo: 'success' },
+
+        async initApp() {
+          await this.cargarConfiguracion();
+          await this.cargarCatalogo();
+          await this.cargarPedidos();
+        },
+
+        mostrarToast(titulo, mensaje, tipo = 'success') {
+          this.toast = { show: true, titulo, mensaje, tipo };
+          setTimeout(() => { this.toast.show = false; }, 3500);
+        },
+
+        async cargarConfiguracion() {
+          try {
+            let res = await fetch(`${API_URL}?action=getConfiguracion`);
+            let json = await res.json();
+            if(json.success && json.data) this.config = Object.assign(this.config, json.data);
+          } catch(e) { console.error(e); }
+        },
+
+        async cargarCatalogo() {
+          try {
+            let res = await fetch(`${API_URL}?action=getCatalogo`);
+            let json = await res.json();
+            if(json.success) this.productos = json.data;
+          } catch(e) { console.error(e); }
+        },
+
+        async cargarPedidos() {
+          try {
+            let res = await fetch(`${API_URL}?action=getVentas`);
+            let json = await res.json();
+            if(json.success) this.listaOrdenes = json.data;
+          } catch(e) { console.error(e); }
+        },
+
+        async iniciarSesion() {
+          try {
+            let res = await fetch(API_URL, {
+              method: 'POST',
+              body: JSON.stringify({ action: 'login', pin: this.loginPin })
+            });
+            let json = await res.json();
+            if(json.success) {
+              this.usuario = { autenticado: true, nombre: json.data.nombre, rol: json.data.rol };
+              this.loginError = '';
+              this.mostrarToast("¡Bienvenido!", `Sesión iniciada como ${json.data.nombre}`);
+            } else {
+              this.loginError = json.error || "PIN incorrecto";
+            }
+          } catch(e) {
+            this.loginError = "Error de conexión.";
+          }
+        },
+
+        cerrarSesion() {
+          this.usuario = { autenticado: false, nombre: '', rol: '' };
+          this.loginPin = '';
+        },
+
+        get productosFiltrados() {
+          if(!this.searchQuery) return this.productos;
+          let q = this.searchQuery.toLowerCase();
+          return this.productos.filter(p => p.nombre.toLowerCase().includes(q) || p.barcode.toString().includes(q));
+        },
+
+        agregarAlCarrito(prod) {
+          let item = this.carrito.find(i => i.id_producto === prod.id);
+          if(item) item.cantidad++;
+          else this.carrito.push({ id_producto: prod.id, nombre: prod.nombre, precio_usd: prod.precio_usd, cantidad: 1 });
+          this.mostrarToast("Añadido", prod.nombre, "success");
+        },
+
+        cambiarCantidad(idx, val) {
+          this.carrito[idx].cantidad += val;
+          if(this.carrito[idx].cantidad <= 0) this.carrito.splice(idx, 1);
+        },
+
+        vaciarCarrito() { this.carrito = []; },
+
+        get totalCarritoUSD() {
+          return this.carrito.reduce((acc, i) => acc + (i.precio_usd * i.cantidad), 0);
+        },
+
+        get totalCarritoBS() {
+          return this.totalCarritoUSD * parseFloat(this.config.TASA_CAMBIO || 36.50);
+        },
+
+        get vueltoUSD() {
+          return Math.max(0, this.pago.recibidoUSD - this.totalCarritoUSD);
+        },
+
+        get vueltoBS() {
+          return this.vueltoUSD * parseFloat(this.config.TASA_CAMBIO || 36.50);
+        },
+
+        enviarVentaWhatsApp() {
+          let mensaje = `*PEDIDO WINK POS*\n`;
+          this.carrito.forEach(i => { mensaje += `• ${i.cantidad}x ${i.nombre} - $${(i.precio_usd * i.cantidad).toFixed(2)}\n`; });
+          mensaje += `*Total Ref:* $${this.totalCarritoUSD.toFixed(2)}\n*Total Bs:* Bs ${this.totalCarritoBS.toFixed(2)}`;
+          let telefono = this.config.WHATSAPP_ADMIN || '584120000000';
+          window.open(`https://api.whatsapp.com/send?phone=${telefono}&text=${encodeURIComponent(mensaje)}`, '_blank');
+          this.mostrarToast("WhatsApp", "Pedido preparado", "success");
+        },
+
+        async confirmarVentaBackend() {
+          let payload = {
+            action: 'procesarVenta',
+            payload: {
+              id_usuario: this.usuario.nombre,
+              total_usd: this.totalCarritoUSD,
+              total_bs: this.totalCarritoBS,
+              tasa_cambio: this.config.TASA_CAMBIO,
+              metodo_pago: this.pago.metodo,
+              estado: 'PENDIENTE',
+              items: this.carrito.map(i => ({
+                id_producto: i.id_producto,
+                nombre: i.nombre,
+                cantidad: i.cantidad,
+                precio_usd: i.precio_usd,
+                subtotal_usd: i.precio_usd * i.cantidad
+              }))
+            }
+          };
+
+          try {
+            let res = await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
+            let json = await res.json();
+            if(json.success) {
+              this.mostrarToast("¡Éxito!", "Venta registrada ID: " + json.data.id_venta);
+              this.vaciarCarrito();
+              this.modalCobro = false;
+              this.cargarCatalogo();
+              this.cargarPedidos();
+            } else {
+              alert("Error: " + json.error);
+            }
+          } catch(e) {
+            alert("Error al procesar la venta.");
+          }
+        },
+
+        async cambiarEstadoPedido(idVenta, nuevoEstado) {
+          try {
+            let res = await fetch(API_URL, {
+              method: 'POST',
+              body: JSON.stringify({ action: 'actualizarEstadoVenta', id_venta: idVenta, nuevo_estado: nuevoEstado })
+            });
+            let json = await res.json();
+            if(json.success) {
+              this.mostrarToast("Actualizado", `Orden ${idVenta} a ${nuevoEstado}`);
+              this.cargarPedidos();
+            } else {
+              alert("Error: " + json.error);
+            }
+          } catch(e) {
+            alert("Error de conexión.");
+          }
+        }
+      }
+    }
+  </script>
+</body>
+</html>
